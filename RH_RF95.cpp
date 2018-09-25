@@ -30,6 +30,7 @@ RH_RF95::RH_RF95(uint8_t slaveSelectPin, uint8_t interruptPin, RHGenericSPI& spi
 {
     _interruptPin = interruptPin;
     _myInterruptIndex = 0xff; // Not allocated yet
+    hasInt = false;
 }
 
 bool RH_RF95::init()
@@ -116,6 +117,63 @@ bool RH_RF95::init()
     return true;
 }
 
+void RH_RF95::process(){
+    if(hasInt == false)return;
+    // Read the interrupt register
+    uint8_t irq_flags = spiRead(RH_RF95_REG_12_IRQ_FLAGS);
+    if (_mode == RHModeRx && irq_flags & (RH_RF95_RX_TIMEOUT | RH_RF95_PAYLOAD_CRC_ERROR))
+    {
+        _rxBad++;
+    }
+    else if (_mode == RHModeRx && irq_flags & RH_RF95_RX_DONE)
+    {
+        // Have received a packet
+        uint8_t len = spiRead(RH_RF95_REG_13_RX_NB_BYTES);
+
+        // Reset the fifo read ptr to the beginning of the packet
+        spiWrite(RH_RF95_REG_0D_FIFO_ADDR_PTR, spiRead(RH_RF95_REG_10_FIFO_RX_CURRENT_ADDR));
+        spiBurstRead(RH_RF95_REG_00_FIFO, _buf, len);
+        _bufLen = len;
+        spiWrite(RH_RF95_REG_12_IRQ_FLAGS, 0xff); // Clear all IRQ flags
+
+        // Remember the last signal to noise ratio, LORA mode
+        // Per page 111, SX1276/77/78/79 datasheet
+        _lastSNR = (int8_t)spiRead(RH_RF95_REG_19_PKT_SNR_VALUE) / 4;
+
+        // Remember the RSSI of this packet, LORA mode
+        // this is according to the doc, but is it really correct?
+        // weakest receiveable signals are reported RSSI at about -66
+        _lastRssi = spiRead(RH_RF95_REG_1A_PKT_RSSI_VALUE);
+        // Adjust the RSSI, datasheet page 87
+        if (_lastSNR < 0)
+            _lastRssi = _lastRssi + _lastSNR;
+        else
+            _lastRssi = (int)_lastRssi * 16 / 15;
+        if (_usingHFport)
+            _lastRssi -= 157;
+        else
+            _lastRssi -= 164;
+
+        // We have received a message.
+        validateRxBuf();
+        if (_rxBufValid)
+            setModeIdle(); // Got one
+    }
+    else if (_mode == RHModeTx && irq_flags & RH_RF95_TX_DONE)
+    {
+        _txGood++;
+        setModeIdle();
+    }
+    else if (_mode == RHModeCad && irq_flags & RH_RF95_CAD_DONE)
+    {
+        _cad = irq_flags & RH_RF95_CAD_DETECTED;
+        setModeIdle();
+    }
+
+    spiWrite(RH_RF95_REG_12_IRQ_FLAGS, 0xff); // Clear all IRQ flags
+    hasInt = false;
+}
+
 // C++ level interrupt handler for this instance
 // LORA is unusual in that it has several interrupt lines, and not a single, combined one.
 // On MiniWirelessLoRa, only one of the several interrupt lines (DI0) from the RFM95 is usefuly 
@@ -123,60 +181,8 @@ bool RH_RF95::init()
 // We use this to get RxDone and TxDone interrupts
 void RH_RF95::handleInterrupt()
 {
-    // Read the interrupt register
-    uint8_t irq_flags = spiRead(RH_RF95_REG_12_IRQ_FLAGS);
-    if (_mode == RHModeRx && irq_flags & (RH_RF95_RX_TIMEOUT | RH_RF95_PAYLOAD_CRC_ERROR))
-    {
-	_rxBad++;
-    }
-    else if (_mode == RHModeRx && irq_flags & RH_RF95_RX_DONE)
-    {
-	// Have received a packet
-	uint8_t len = spiRead(RH_RF95_REG_13_RX_NB_BYTES);
-
-	// Reset the fifo read ptr to the beginning of the packet
-	spiWrite(RH_RF95_REG_0D_FIFO_ADDR_PTR, spiRead(RH_RF95_REG_10_FIFO_RX_CURRENT_ADDR));
-	spiBurstRead(RH_RF95_REG_00_FIFO, _buf, len);
-	_bufLen = len;
-	spiWrite(RH_RF95_REG_12_IRQ_FLAGS, 0xff); // Clear all IRQ flags
-
-	// Remember the last signal to noise ratio, LORA mode
-	// Per page 111, SX1276/77/78/79 datasheet
-	_lastSNR = (int8_t)spiRead(RH_RF95_REG_19_PKT_SNR_VALUE) / 4;
-
-	// Remember the RSSI of this packet, LORA mode
-	// this is according to the doc, but is it really correct?
-	// weakest receiveable signals are reported RSSI at about -66
-	_lastRssi = spiRead(RH_RF95_REG_1A_PKT_RSSI_VALUE);
-	// Adjust the RSSI, datasheet page 87
-	if (_lastSNR < 0)
-	    _lastRssi = _lastRssi + _lastSNR;
-	else
-	    _lastRssi = (int)_lastRssi * 16 / 15;
-	if (_usingHFport)
-	    _lastRssi -= 157;
-	else
-	    _lastRssi -= 164;
-	    
-	// We have received a message.
-	validateRxBuf(); 
-	if (_rxBufValid)
-	    setModeIdle(); // Got one 
-    }
-    else if (_mode == RHModeTx && irq_flags & RH_RF95_TX_DONE)
-    {
-	_txGood++;
-	setModeIdle();
-    }
-    else if (_mode == RHModeCad && irq_flags & RH_RF95_CAD_DONE)
-    {
-        _cad = irq_flags & RH_RF95_CAD_DETECTED;
-        setModeIdle();
-    }
-    // Sigh: on some processors, for some unknown reason, doing this only once does not actually
-    // clear the radio's interrupt flag. So we do it twice. Why?
-    spiWrite(RH_RF95_REG_12_IRQ_FLAGS, 0xff); // Clear all IRQ flags
-    spiWrite(RH_RF95_REG_12_IRQ_FLAGS, 0xff); // Clear all IRQ flags
+    this->hasInt = true;
+    if(_mode == RHModeTx)process();
 }
 
 // These are low level functions that call the interrupt handler for the correct

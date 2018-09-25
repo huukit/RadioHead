@@ -1,7 +1,7 @@
 // RHGenericDriver.h
 // Author: Mike McCauley (mikem@airspayce.com)
 // Copyright (C) 2014 Mike McCauley
-// $Id: RHGenericDriver.h,v 1.22 2017/10/03 06:04:59 mikem Exp $
+// $Id: RHGenericDriver.h,v 1.19 2017/03/08 09:30:47 mikem Exp mikem $
 
 #ifndef RHGenericDriver_h
 #define RHGenericDriver_h
@@ -206,7 +206,7 @@ public:
     /// Usually it is the RSSI of the last received message, which is measured when the preamble is received.
     /// If you called readRssi() more recently, it will return that more recent value.
     /// \return The most recent RSSI measurement in dBm.
-    int16_t        lastRssi();
+    int8_t        lastRssi();
 
     /// Returns the operating mode of the library.
     /// \return the current mode, one of RF69_MODE_*
@@ -235,17 +235,21 @@ public:
     /// Caution: not all drivers can correctly report this count. Some underlying hardware only report
     /// good packets.
     /// \return The number of bad packets received.
-    virtual uint16_t       rxBad();
+    uint16_t       rxBad();
 
     /// Returns the count of the number of 
     /// good received packets
     /// \return The number of good packets received.
-    virtual uint16_t       rxGood();
+    uint16_t       rxGood();
 
     /// Returns the count of the number of 
     /// packets successfully transmitted (though not necessarily received by the destination)
     /// \return The number of packets successfully transmitted
-    virtual uint16_t       txGood();
+    uint16_t       txGood();
+
+    void process(){
+    	YIELD;
+    }
 
 protected:
 
@@ -283,7 +287,7 @@ protected:
     uint8_t             _txHeaderFlags;
 
     /// The value of the last received RSSI value, in some transport specific units
-    volatile int16_t     _lastRssi;
+    volatile int8_t     _lastRssi;
 
     /// Count of the number of bad messages (eg bad checksum etc) received
     volatile uint16_t   _rxBad;
@@ -303,5 +307,6 @@ protected:
 private:
 
 };
+
 
 #endif 

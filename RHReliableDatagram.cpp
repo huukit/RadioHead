@@ -9,7 +9,7 @@
 //
 // Author: Mike McCauley (mikem@airspayce.com)
 // Copyright (C) 2011 Mike McCauley
-// $Id: RHReliableDatagram.cpp,v 1.17 2017/03/08 09:30:47 mikem Exp $
+// $Id: RHReliableDatagram.cpp,v 1.17 2017/03/08 09:30:47 mikem Exp mikem $
 
 #include <RHReliableDatagram.h>
 
@@ -76,9 +76,12 @@ bool RHReliableDatagram::sendtoWait(uint8_t* buf, uint8_t len, uint8_t address)
 	int32_t timeLeft;
         while ((timeLeft = timeout - (millis() - thisSendTime)) > 0)
 	{
-	    if (waitAvailableTimeout(timeLeft))
+	    _driver.process();
+
+        	if (waitAvailableTimeout(timeLeft))
 	    {
-		uint8_t from, to, id, flags;
+
+        		uint8_t from, to, id, flags;
 		if (recvfrom(0, 0, &from, &to, &id, &flags)) // Discards the message
 		{
 		    // Now have a message: is it our ACK?

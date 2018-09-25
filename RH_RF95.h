@@ -742,7 +742,7 @@ public:
 
     /// Enable TCXO mode
     /// Call this immediately after init(), to force your radio to use an external 
-    /// frequency source, such as a Temperature Compensated Crystal Oscillator (TCXO), if available.
+    /// frequency source, such as a Temperature Compensated Crystal Oscillator (TCXO).
     /// See the comments in the main documentation about the sensitivity of this radio to
     /// clock frequency especially when using narrow bandwidths.
     /// Leaves the module in sleep mode.
@@ -767,11 +767,14 @@ public:
     /// \return SNR of the last received message in dB
     int lastSNR();
 
+    void process();
+
 protected:
     /// This is a low level function to handle the interrupts for one instance of RH_RF95.
     /// Called automatically by isr*()
     /// Should not need to be called by user code.
     void           handleInterrupt();
+    bool           hasInt;
 
     /// Examine the revceive buffer to determine whether the message is for this node
     void validateRxBuf();
